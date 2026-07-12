@@ -19,33 +19,112 @@ const URLS = {
     gstu: 'https://abiturient.gstu.by/course-of-documents-acceptance'
 };
 
+// ==========================================
+// Генерация диапазонов баллов
+// ==========================================
+// На сайте ГГУ таблица содержит колонки-диапазоны баллов:
+// "396 и более", "391-395", "386-390", ... "51-55", "50 и менее"
+// Генерируем этот список программно, чтобы не хардкодить 70+ строк.
+function generateScoreBands(topMin, bottomMax, step) {
+    const bands = [`${topMin} и более`];
+    let upper = topMin - 1;
+    while (upper - step + 1 > bottomMax) {
+        const lower = upper - step + 1;
+        bands.push(`${lower}-${upper}`);
+        upper -= step;
+    }
+    bands.push(`${bottomMax} и менее`);
+    return bands;
+}
+
+const SCORE_BANDS = generateScoreBands(396, 50, 5);
+
 // Функция парсинга ГГУ
 async function parseGSU() {
     try {
-        // Убрали arraybuffer и iconv, используем стандартный запрос
         const { data } = await axiosInstance.get(URLS.gsu_plat);
         const $ = cheerio.load(data);
-        let results = '📊 *ГГУ (Платное - Дневное):*\n\n';
+
+        const results = [];
+        let currentFaculty = '';
 
         $('table tr').each((index, element) => {
             const cols = $(element).find('td');
-            if (cols.length >= 3) {
-                const title = $(cols[0]).text().trim().replace(/\n/g, ' ');
-                const plan = $(cols[1]).text().trim();
-                const apps = $(cols[2]).text().trim();
-                
-                // Фильтруем: пропускаем заголовки, пустые строки и мусор
-                const isHeader = title.toLowerCase().includes('специальность') || 
-                                 title.toLowerCase().includes('форма') || 
-                                 title.toLowerCase().includes('всего');
-                
-                if (title && !isHeader && plan !== 'План приема') {
-                    results += `🔹 *${title}*\nПлан: ${plan} | Подано: ${apps}\n\n`;
-                }
+            const cellTexts = cols
+                .map((i, el) => $(el).text().trim().replace(/\s+/g, ' '))
+                .get();
+
+            if (cellTexts.length === 0) return;
+
+            const joined = cellTexts.join(' ').trim();
+            const hasDigits = /\d/.test(joined);
+            const hasCyrillic = /[А-Яа-яЁё]/.test(joined);
+
+            // Строка-разделитель факультета: мало ячеек, есть буквы, нет цифр
+            if (cellTexts.length <= 2 && hasCyrillic && !hasDigits) {
+                currentFaculty = joined;
+                results.push({ type: 'faculty', name: currentFaculty });
+                return;
             }
+
+            if (cellTexts.length < 4) return; // мусорные/шапочные строки
+
+            // Ищем ячейку с названием специальности — первая с 3+ кириллическими буквами
+            const nameIndex = cellTexts.findIndex(t => /[А-Яа-яЁё]{3,}/.test(t));
+            if (nameIndex === -1) return;
+
+            const name = cellTexts[nameIndex];
+
+            // Пропускаем строки шапки таблицы (там тоже есть слово "специальность" и т.д.)
+            const isHeaderRow = /специальност|факультет|план\s*прие|подано\s*заявл|всего/i.test(name);
+            if (isHeaderRow) return;
+
+            const numericCells = cellTexts.slice(nameIndex + 1).map(t => (t === '' ? '0' : t));
+            if (numericCells.length < 2) return;
+
+            const plan = numericCells[0];
+            const submittedTotal = numericCells[1];
+
+            // Баллы — это последние N числовых колонок (N = длина SCORE_BANDS),
+            // так безопаснее, чем считать от начала, т.к. между "Подано" и баллами
+            // могут быть доп. колонки (без экзаменов / вне конкурса / по конкурсу)
+            const scoreCounts = numericCells.slice(-SCORE_BANDS.length);
+
+            const scoreBreakdown = SCORE_BANDS
+                .map((label, i) => ({ label, count: parseInt(scoreCounts[i], 10) || 0 }))
+                .filter(b => b.count > 0)
+                .map(b => `${b.label}: ${b.count}`)
+                .join(', ');
+
+            results.push({
+                type: 'specialty',
+                faculty: currentFaculty,
+                name,
+                plan,
+                submittedTotal,
+                scoreBreakdown
+            });
         });
-        
-        return results === '📊 *ГГУ (Платное - Дневное):*\n\n' ? '⚠️ Данные не найдены или изменилась структура сайта.' : results;
+
+        if (results.length === 0) {
+            return '⚠️ Данные не найдены или изменилась структура сайта.';
+        }
+
+        let text = '📊 *ГГУ (Платное - Дневное):*\n\n';
+        for (const r of results) {
+            if (r.type === 'faculty') {
+                text += `\n🏫 *${r.name}*\n`;
+                continue;
+            }
+            text += `🔹 *${r.name}*\n`;
+            text += `План: ${r.plan} | Подано: ${r.submittedTotal}\n`;
+            text += r.scoreBreakdown
+                ? `Баллы подавших: ${r.scoreBreakdown}\n`
+                : `Баллы подавших: нет данных\n`;
+            text += `\n`;
+        }
+
+        return text;
     } catch (e) {
         console.error(e);
         return '❌ Ошибка при получении данных ГГУ.';
