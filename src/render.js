@@ -296,7 +296,6 @@ function adminNewsForm({ item = {}, categories, session, error, csrfToken }) {
 
 module.exports = {
   esc,
-  layout,
   homePage,
   newsListPage,
   newsDetailPage,
