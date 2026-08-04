@@ -2,7 +2,7 @@ services:
   - type: web
     name: bteu-cms
     runtime: node
-    plan: starter
+    plan: free
     region: frankfurt
     branch: main
     buildCommand: npm install --omit=dev
