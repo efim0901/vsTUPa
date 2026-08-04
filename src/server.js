@@ -1,10 +1,5 @@
 'use strict';
 // server.js — application entry point.
-// Built on Node's built-in `http` module rather than Express so the
-// project runs with zero external dependencies in this sandbox. The code
-// is organised the way an Express app would be (routes/middleware
-// separated) so swapping in Express later is a mechanical change — see
-// README "От прототипа к продакшену".
 
 const http = require('node:http');
 const fs = require('node:fs');
@@ -12,7 +7,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { URL } = require('node:url');
 
-loadEnvFile(); // .env support without a package (see helper below)
+loadEnvFile();
 
 const db = require('./db');
 const auth = require('./auth');
@@ -20,7 +15,7 @@ const render = require('./render');
 
 const PORT = Number(process.env.PORT || 3000);
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
-const MAX_BODY_BYTES = 1024 * 1024; // 1MB — plenty for a news form, blocks naive DoS via huge bodies
+const MAX_BODY_BYTES = 1024 * 1024;
 
 const MIME = {
   '.css': 'text/css; charset=utf-8',
@@ -125,8 +120,6 @@ function securityHeaders(res) {
 }
 
 function getClientIp(req) {
-  // Only trust X-Forwarded-For if you actually sit behind a reverse proxy
-  // that sets it (see README nginx config). Otherwise this is spoofable.
   if (process.env.TRUST_PROXY === 'true') {
     const fwd = req.headers['x-forwarded-for'];
     if (fwd) return fwd.split(',')[0].trim();
@@ -135,7 +128,7 @@ function getClientIp(req) {
 }
 
 async function ensureBootstrapAdmin() {
-  if (db.countAdmins() > 0) return;
+  if ((await db.countAdmins()) > 0) return;
   const username = process.env.ADMIN_BOOTSTRAP_USER;
   const password = process.env.ADMIN_BOOTSTRAP_PASSWORD;
   if (!username || !password) {
@@ -146,7 +139,7 @@ async function ensureBootstrapAdmin() {
     return;
   }
   const { salt, hash } = auth.hashPassword(password);
-  db.createAdmin({ username, password_hash: hash, salt, role: 'admin' });
+  await db.createAdmin({ username, password_hash: hash, salt, role: 'admin' });
   console.log(`[auth] Bootstrap admin "${username}" created. Remove ADMIN_BOOTSTRAP_* from .env now.`);
 }
 
@@ -193,9 +186,9 @@ function checkCsrf(session, body) {
 async function handlePublic(req, res, pathname, query) {
   if (pathname === '/') {
     const html = render.homePage({
-      news: db.listPublishedNews({ limit: 8 }),
-      events: db.listUpcomingEvents(4),
-      programs: db.listPrograms(),
+      news: await db.listPublishedNews({ limit: 8 }),
+      events: await db.listUpcomingEvents(4),
+      programs: await db.listPrograms(),
     });
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }).end(html);
     return true;
@@ -203,22 +196,21 @@ async function handlePublic(req, res, pathname, query) {
 
   if (pathname === '/news') {
     const category = query.get('category') || null;
-    const html = render.newsListPage({ news: db.listPublishedNews({ category, limit: 50 }), category });
+    const html = render.newsListPage({ news: await db.listPublishedNews({ category, limit: 50 }), category });
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }).end(html);
     return true;
   }
 
   const newsMatch = pathname.match(/^\/news\/([a-z0-9-]+)$/);
   if (newsMatch) {
-    const item = db.getNewsBySlug(newsMatch[1]);
+    const item = await db.getNewsBySlug(newsMatch[1]);
     if (!item || item.status !== 'published') return false;
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }).end(render.newsDetailPage(item));
     return true;
   }
 
-  // JSON API — e.g. for a future mobile app or headless frontend
   if (pathname === '/api/news') {
-    const items = db.listPublishedNews({ limit: 50 });
+    const items = await db.listPublishedNews({ limit: 50 });
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' }).end(JSON.stringify(items));
     return true;
   }
@@ -240,7 +232,7 @@ async function handleAdmin(req, res, pathname, method) {
         return true;
       }
       const body = parseForm(await readBody(req));
-      const admin = db.getAdminByUsername(body.username || '');
+      const admin = await db.getAdminByUsername(body.username || '');
       const ok = admin && auth.verifyPassword(body.password || '', admin.salt, admin.password_hash);
       if (!ok) {
         auth.recordFailedAttempt(ip);
@@ -264,13 +256,12 @@ async function handleAdmin(req, res, pathname, method) {
     return true;
   }
 
-  // Everything below requires an authenticated session.
   const session = requireAuth(req, res);
-  if (!session) return true; // requireAuth already redirected
+  if (!session) return true;
 
   if (pathname === '/admin' && method === 'GET') {
     const html = render.adminDashboard({
-      news: db.listAllNewsForAdmin(),
+      news: await db.listAllNewsForAdmin(),
       session,
       csrfToken: auth.csrfTokenFor(session),
     });
@@ -280,7 +271,7 @@ async function handleAdmin(req, res, pathname, method) {
 
   if (pathname === '/admin/news/new' && method === 'GET') {
     const html = render.adminNewsForm({
-      categories: db.listCategories(),
+      categories: await db.listCategories(),
       session,
       csrfToken: auth.csrfTokenFor(session),
     });
@@ -294,7 +285,7 @@ async function handleAdmin(req, res, pathname, method) {
     const slug = (body.slug || slugify(body.title)).trim();
     const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
     try {
-      const id = db.createNews({
+      const id = await db.createNews({
         slug,
         title: body.title.trim(),
         excerpt: body.excerpt || '',
@@ -305,10 +296,10 @@ async function handleAdmin(req, res, pathname, method) {
         published_at: body.status === 'published' ? now : null,
         author_id: session.adminId,
       });
-      db.logAction(session.adminId, 'news.create', 'news', id);
+      await db.logAction(session.adminId, 'news.create', 'news', id);
     } catch (e) {
       const html = render.adminNewsForm({
-        item: body, categories: db.listCategories(), session,
+        item: body, categories: await db.listCategories(), session,
         error: 'Не удалось сохранить: возможно, такой slug уже используется.',
         csrfToken: auth.csrfTokenFor(session),
       });
@@ -321,9 +312,9 @@ async function handleAdmin(req, res, pathname, method) {
 
   const editMatch = pathname.match(/^\/admin\/news\/(\d+)\/edit$/);
   if (editMatch && method === 'GET') {
-    const item = db.getNewsById(Number(editMatch[1]));
+    const item = await db.getNewsById(Number(editMatch[1]));
     if (!item) return false;
-    const html = render.adminNewsForm({ item, categories: db.listCategories(), session, csrfToken: auth.csrfTokenFor(session) });
+    const html = render.adminNewsForm({ item, categories: await db.listCategories(), session, csrfToken: auth.csrfTokenFor(session) });
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }).end(html);
     return true;
   }
@@ -333,11 +324,11 @@ async function handleAdmin(req, res, pathname, method) {
     const id = Number(updateMatch[1]);
     const body = parseForm(await readBody(req));
     if (!checkCsrf(session, body)) return sendCsrfError(res);
-    const existing = db.getNewsById(id);
+    const existing = await db.getNewsById(id);
     if (!existing) return false;
     const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
     const nextStatus = body.status === 'published' ? 'published' : 'draft';
-    db.updateNews(id, {
+    await db.updateNews(id, {
       slug: (body.slug || slugify(body.title)).trim(),
       title: body.title.trim(),
       excerpt: body.excerpt || '',
@@ -347,7 +338,7 @@ async function handleAdmin(req, res, pathname, method) {
       status: nextStatus,
       published_at: nextStatus === 'published' ? (existing.published_at || now) : null,
     });
-    db.logAction(session.adminId, 'news.update', 'news', id);
+    await db.logAction(session.adminId, 'news.update', 'news', id);
     res.writeHead(302, { Location: '/admin' }).end();
     return true;
   }
@@ -357,8 +348,8 @@ async function handleAdmin(req, res, pathname, method) {
     const id = Number(deleteMatch[1]);
     const body = parseForm(await readBody(req));
     if (!checkCsrf(session, body)) return sendCsrfError(res);
-    db.deleteNews(id);
-    db.logAction(session.adminId, 'news.delete', 'news', id);
+    await db.deleteNews(id);
+    await db.logAction(session.adminId, 'news.delete', 'news', id);
     res.writeHead(302, { Location: '/admin' }).end();
     return true;
   }
@@ -406,10 +397,17 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-ensureBootstrapAdmin().then(() => {
-  server.listen(PORT, () => {
-    console.log(`BTEU CMS listening on http://localhost:${PORT}`);
+// Запускаем инициализацию базы перед стартом сервера
+db.initDb()
+  .then(() => ensureBootstrapAdmin())
+  .then(() => {
+    server.listen(PORT, () => {
+      console.log(`BTEU CMS listening on http://localhost:${PORT}`);
+    });
+  })
+  .catch(err => {
+    console.error('Failed to initialize database on startup:', err);
+    process.exit(1);
   });
-});
 
 module.exports = server;
