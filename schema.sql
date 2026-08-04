@@ -1,46 +1,65 @@
-INSERT OR IGNORE INTO categories (slug, title) VALUES
-  ('abiturientu', 'Абитуриенту'),
-  ('nauka', 'Наука'),
-  ('studlife', 'Студенческая жизнь'),
-  ('international', 'Международное'),
-  ('university', 'Университет');
+CREATE TABLE IF NOT EXISTS admins (
+  id            SERIAL PRIMARY KEY,
+  username      VARCHAR(255) UNIQUE NOT NULL,
+  password_hash TEXT NOT NULL,
+  salt          TEXT NOT NULL,
+  role          VARCHAR(50) NOT NULL DEFAULT 'editor',
+  created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 
-INSERT OR IGNORE INTO news (slug, title, excerpt, body, cover_image, category_id, status, published_at) VALUES
-  ('zasedanie-soveta-rektorov', 'Заседание Республиканского совета ректоров учреждений высшего образования',
-   'Ректоры вузов страны обсудили направления подготовки кадров для отраслей экономики.',
-   '<p>Ректоры вузов страны обсудили направления подготовки кадров для отраслей экономики и роль кооперативного образования в этом процессе.</p>',
-   '/uploads/rectors.jpg', 5, 'published', '2026-08-03 10:00:00'),
-  ('bal-u-lebyazhego-pruda', 'Большой бал у Лебяжьего пруда собрал студентов со всех факультетов',
-   'Творческий вечер стал одной из самых ярких традиций студенческой жизни университета.',
-   '<p>Творческий вечер стал одной из самых ярких традиций студенческой жизни университета этой осенью.</p>',
-   '/uploads/ball.jpg', 3, 'published', '2026-07-30 09:00:00'),
-  ('rezhim-raboty-priemnoy', 'Режим работы приёмной комиссии в выходные дни',
-   'Информация для абитуриентов о графике работы в выходные.',
-   '<p>Информация для абитуриентов о графике работы приёмной комиссии в выходные дни августа.</p>',
-   NULL, 1, 'published', '2026-08-03 08:00:00'),
-  ('ostalos-3-mesta', 'Осталось всего 3 места — важно для абитуриентов',
-   'Актуальная информация о наличии мест на ряде специальностей.',
-   '<p>Актуальная информация о наличии мест на ряде специальностей текущего набора.</p>',
-   NULL, 1, 'published', '2026-07-22 08:00:00'),
-  ('forum-molodezh-kooperacii', 'Международный форум «Молодёжь кооперации»',
-   'Форум объединил молодых специалистов отрасли из нескольких стран.',
-   '<p>Международный форум потребительской кооперации «Молодёжь кооперации: объединение ресурсов для развития отрасли».</p>',
-   NULL, 4, 'published', '2026-07-16 08:00:00');
+CREATE TABLE IF NOT EXISTS categories (
+  id    SERIAL PRIMARY KEY,
+  slug  VARCHAR(255) UNIQUE NOT NULL,
+  title VARCHAR(255) NOT NULL
+);
 
-INSERT OR IGNORE INTO events (title, description, event_date) VALUES
-  ('Городской турслёт «Студенческая Жара 2026»', 'Спортивно-туристический фестиваль для студентов вузов Гомеля', '2026-08-30'),
-  ('Форум «Молодёжь кооперации»', 'Объединение ресурсов для развития отрасли', '2026-08-16'),
-  ('Поездка по маршруту «Косово — Мотоль»', 'Экскурсионная программа студенческого клуба', '2026-08-10'),
-  ('День потребительской кооперации', 'Праздничные мероприятия на площадках университета', '2026-08-06');
+CREATE TABLE IF NOT EXISTS news (
+  id            SERIAL PRIMARY KEY,
+  slug          VARCHAR(255) UNIQUE NOT NULL,
+  title         VARCHAR(255) NOT NULL,
+  excerpt       TEXT,
+  body          TEXT NOT NULL DEFAULT '',
+  cover_image   TEXT,
+  category_id   INTEGER REFERENCES categories(id) ON DELETE SET NULL,
+  status        VARCHAR(50) NOT NULL DEFAULT 'draft',
+  published_at  TIMESTAMP,
+  author_id     INTEGER REFERENCES admins(id) ON DELETE SET NULL,
+  created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_news_status_pub ON news(status, published_at DESC);
+CREATE INDEX IF NOT EXISTS idx_news_category ON news(category_id);
 
-INSERT OR IGNORE INTO programs (title, level, form, sort_order) VALUES
-  ('Экономика и управление на предприятии', 'бакалавриат', 'очно/заочно', 1),
-  ('Финансы и кредит', 'бакалавриат', 'очно/заочно', 2),
-  ('Логистика', 'бакалавриат', 'очно', 3),
-  ('Управление персоналом', 'бакалавриат', 'очно/заочно', 4),
-  ('Бухгалтерский учёт и анализ', 'бакалавриат', 'очно/заочно', 5),
-  ('Правоведение', 'бакалавриат', 'очно', 6);
+CREATE TABLE IF NOT EXISTS events (
+  id          SERIAL PRIMARY KEY,
+  title       VARCHAR(255) NOT NULL,
+  description TEXT,
+  event_date  DATE NOT NULL,
+  created_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_events_date ON events(event_date);
 
-INSERT OR IGNORE INTO pages (slug, title, body) VALUES
-  ('istoriya', 'История университета', '<p>История БТЭУ ПК начинается в 1964 году...</p>'),
-  ('kontakty', 'Контакты', '<p>г. Гомель, пр. Октября, 50. Тел: +375 (232) 50-03-44</p>');
+CREATE TABLE IF NOT EXISTS programs (
+  id         SERIAL PRIMARY KEY,
+  title      VARCHAR(255) NOT NULL,
+  level      VARCHAR(100) NOT NULL DEFAULT 'бакалавриат',
+  form       VARCHAR(100) NOT NULL DEFAULT 'очно',
+  sort_order INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS pages (
+  id         SERIAL PRIMARY KEY,
+  slug       VARCHAR(255) UNIQUE NOT NULL,
+  title      VARCHAR(255) NOT NULL,
+  body       TEXT NOT NULL DEFAULT '',
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS audit_log (
+  id         SERIAL PRIMARY KEY,
+  admin_id   INTEGER REFERENCES admins(id) ON DELETE SET NULL,
+  action     VARCHAR(255) NOT NULL,
+  entity     VARCHAR(255),
+  entity_id  INTEGER,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
