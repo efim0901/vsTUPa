@@ -1,0 +1,35 @@
+services:
+  - type: web
+    name: bteu-cms
+    runtime: node
+    plan: starter
+    region: frankfurt
+    branch: main
+    buildCommand: npm install --omit=dev
+    startCommand: npm start
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: TRUST_PROXY
+        value: "true"
+      - key: SEED_ON_INIT
+        value: "true"
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: bteu-db
+          property: connectionString
+      # Заполните вручную в Render Dashboard после первого деплоя,
+      # затем удалите — см. DEPLOY.md, шаг «Первый вход».
+      - key: ADMIN_BOOTSTRAP_USER
+        sync: false
+      - key: ADMIN_BOOTSTRAP_PASSWORD
+        sync: false
+
+databases:
+  - name: bteu-db
+    plan: free
+    region: frankfurt
