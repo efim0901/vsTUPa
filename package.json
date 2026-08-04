@@ -1,0 +1,16 @@
+{
+  "name": "bteu-cms",
+  "version": "0.1.0",
+  "private": true,
+  "description": "БТЭУ ПК — сайт с собственной CMS (новости, события, программы). Прототип на встроенных модулях Node.js.",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "notes": {
+    "dependencies": "Проект намеренно не использует внешние npm-пакеты (node:sqlite, node:http, node:crypto — всё встроено в Node 22). Для продакшена см. README, раздел «От прототипа к продакшену»: express, pg, express-session + connect-redis, helmet, multer/sharp для загрузок, zod для валидации."
+  }
+}
