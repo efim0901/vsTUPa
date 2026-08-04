@@ -14,29 +14,26 @@ function esc(str = '') {
 
 function fmtDate(iso) {
   if (!iso) return '';
-  const d = new Date(iso.replace(' ', 'T'));
-  return d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
-}
 
-function layout({ title, description = 'Белорусский торгово-экономический университет потребительской кооперации', body, active = '' }) {
-  return `<!DOCTYPE html>
-<html lang="ru">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>${esc(title)}</title>
-<meta name="description" content="${esc(description)}">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,500&family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/public/style.css">
-</head>
-<body>
-${header(active)}
-${body}
-${footer()}
-<script src="/public/main.js" defer></script>
-</body>
-</html>`;
+  // Если pg вернул объект Date, преобразуем его в ISO-строку
+  let str = iso instanceof Date ? iso.toISOString() : String(iso);
+
+  // Нормализуем пробел между датой и временем в 'T'
+  str = str.replace(' ', 'T');
+
+  const d = new Date(str);
+  if (isNaN(d.getTime())) return str;
+
+  const months = [
+    'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
+    'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'
+  ];
+
+  const day = d.getDate();
+  const month = months[d.getMonth()];
+  const year = d.getFullYear();
+
+  return `${day} ${month} ${year}`;
 }
 
 function header(active) {
